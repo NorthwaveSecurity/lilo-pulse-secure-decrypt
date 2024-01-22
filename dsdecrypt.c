@@ -31,38 +31,8 @@ static const struct ds_kernel_key* ivanti_probe_key (uint8_t *buffer) {
 struct options {
     const struct ds_kernel_key *key;
     int force, verbose;
-    FILE *input, *output;
+    const char *input, *output;
 };
-int decrypt (struct options *options) {
-    uint64_t start_sector = 0;
-    if (options->key == NULL) {
-        if (options->verbose) {
-            fprintf (stderr, "No key specified, probing.\n");
-        }
-        uint8_t buffer[SECTOR_SIZE];
-        if (fread (buffer, SECTOR_SIZE, 1, options->input) != 1) {
-            fprintf (stderr, "Short read.\n");
-            return 0;
-        }
-        const struct ds_kernel_key *key = ivanti_probe_key (buffer);
-        if (key == NULL) {
-            fprintf (stderr, "No matching key found.\n");
-            return 0;
-        }
-        if (fwrite (buffer, SECTOR_SIZE, 1, options->output) != 1) {
-            fprintf (stderr, "Short write.\n");
-            return 0;
-        }
-        options->key = key;
-        start_sector = 1;
-    }
-    if (options->verbose) {
-        fprintf (stderr, "Probe done key=%s start_sector=%lld\n", options->key->kernel_version, start_sector);
-    }
-    AES_KEY key;
-    AES_set_decrypt_key (options->key->key, 128, &key);
-    return aes_xex_decrypt_image (&key, start_sector, options->input, options->output);
-}
 static FILE *parse_input_filename (const char *filename) {
     if (strcmp (filename, "-") == 0) {
         return stdin;
@@ -76,6 +46,58 @@ FILE *parse_output_filename (const char *filename) {
     } else {
         return fopen (filename, "wb");
     }
+}
+int decrypt (struct options *options) {
+    int result = 0;
+    FILE *input = parse_input_filename (options->input), *output = NULL;
+    if (input == NULL) {
+        fprintf (stderr, "Error opening input: %s\n", strerror (errno));
+        return 0;
+    }
+    uint64_t start_sector = 0;
+    if (options->key == NULL) {
+        if (options->verbose) {
+            fprintf (stderr, "No key specified, probing.\n");
+        }
+        uint8_t buffer[SECTOR_SIZE];
+        if (fread (buffer, SECTOR_SIZE, 1, input) != 1) {
+            fprintf (stderr, "Short read.\n");
+            goto close_in;
+        }
+        const struct ds_kernel_key *key = ivanti_probe_key (buffer);
+        if (key == NULL) {
+            fprintf (stderr, "No matching key found.\n");
+            goto close_in;
+        }
+        output = parse_output_filename (options->output);
+        if (output == NULL) {
+            fprintf (stderr, "Error opening output: %s\n", strerror (errno));
+            goto close_in;
+        }
+        if (fwrite (buffer, SECTOR_SIZE, 1, output) != 1) {
+            fprintf (stderr, "Short write.\n");
+            goto close_out;
+        }
+        options->key = key;
+        start_sector = 1;
+        if (options->verbose) {
+            fprintf (stderr, "Probe done key=%s start_sector=%lld\n", options->key->kernel_version, start_sector);
+        }
+    } else {
+        FILE *output = parse_output_filename (options->output);
+        if (output == NULL) {
+            fprintf (stderr, "Error opening output: %s\n", strerror (errno));
+            goto close_in;
+        }
+    }
+    AES_KEY key;
+    AES_set_decrypt_key (options->key->key, 128, &key);
+    result = aes_xex_decrypt_image (&key, start_sector, input, output);
+close_out:
+    fclose (output);
+close_in:
+    fclose (input);
+    return result;
 }
 void usage (void) {
     fprintf (stderr,
@@ -124,19 +146,18 @@ int parse_options (int argc, char *argv[], struct options *options) {
                 return 0;
         }
     }
-    printf("argc - optind = %d\n", argc - optind);
     switch (argc - optind) {
         case 2:
-            options->input = parse_input_filename (argv[optind]);
-            options->output = parse_output_filename (argv[optind + 1]);
+            options->input = argv[optind];
+            options->output = argv[optind + 1];
             break;
         case 1:
-            options->input = parse_input_filename (argv[optind]);
-            options->output = stdout;
+            options->input = argv[optind];
+            options->output = "-";
             break;
         case 0:
-            options->input = stdin;
-            options->output = stdout;
+            options->input = "-";
+            options->output = "-";
             break;
         default:
             return 0;
@@ -151,6 +172,4 @@ int main (int argc, char *argv[]) {
         exit (-1);
     }
     decrypt (&options);
-    fclose (options.input);
-    fclose (options.output);
 }
