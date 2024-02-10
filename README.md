@@ -41,6 +41,11 @@ Alternativately you can also check out /proc/kallsyms on a running system to get
 In order to get the decompressed ELF image from the kernel files you can use the `extract-linux` script from the kernel source.
 Checking out the `loop_setup_root` function in Ghidra or Binary Ninja will show you the deobfuscated key, they both their constant folding magic.
 
+An alternative approach to extract keys is to create a disk image of the appliance that can then be run it using qemu.
+Qemu should be started with a local monitor (e.g. `-monitor telnet:127.0.0.1:8000`).
+After selecting a boot entry connect to the monitor and dump the memory to a file.
+You can then use tools like aeskeyfind to extract the key from the memory dump.
+
 ## Factory reset kernel
 
 For the factory reset image the `extract-linux` script did not work. Whatever is decompressed is not a valid ELF file.
