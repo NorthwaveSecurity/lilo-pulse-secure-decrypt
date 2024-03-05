@@ -84,7 +84,7 @@ int decrypt (struct options *options) {
             fprintf (stderr, "Probe done key=%s start_sector=%lld\n", options->key->kernel_version, start_sector);
         }
     } else {
-        FILE *output = parse_output_filename (options->output);
+        output = parse_output_filename (options->output);
         if (output == NULL) {
             fprintf (stderr, "Error opening output: %s\n", strerror (errno));
             goto close_in;
